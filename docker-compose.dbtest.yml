@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  dbtest:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: DBTBHTEST
+    ports:
+      - '5433:5432'
+    volumes:
+      - dbtest-data:/var/lib/postgresql/data
+
+volumes:
+  dbtest-data:

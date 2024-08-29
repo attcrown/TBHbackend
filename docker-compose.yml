@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  dbproduct:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: DBTBHPRODUCT
+    ports:
+      - '5434:5432'
+    volumes:
+      - dbproduct-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d DBTBHPRODUCT"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 5s
+
+  app:
+    build: .
+    ports:
+      - '3001:3000'
+    depends_on:
+      dbproduct:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://user:password@dbproduct:5432/DBTBHPRODUCT
+
+volumes:
+  dbproduct-data:
