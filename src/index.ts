@@ -5,6 +5,7 @@ import * as turf from '@turf/turf';
 import dotenv from 'dotenv';
 import { Client } from 'pg';
 
+
 const app = express();
 
 // Load environment variables from .env file
@@ -69,7 +70,7 @@ const loadGeoJson = async () => {
         existingGeojson2 = JSON.parse(data2);
 
     } catch (error) {
-        console.error('Error reading or parsing forest.geojson:', error);
+        console.error('Error reading or parsing the GeoJSON file:', error);
     }
 };
 
@@ -80,24 +81,24 @@ app.use(express.json());
 
 app.post('/check-intersection', async (req: Request, res: Response) => {
     const userGeoJson: any = req.body;
-    console.log(userGeoJson);
+    console.log('req.body',userGeoJson);
 
     // Check if existingGeojson has features and it's an array
     const [forest ,protect] = await Promise.all([
-        checkGeojson(userGeoJson),
-        checkGeojson2(userGeoJson)
+        checkGeojson(userGeoJson , existingGeojson),
+        checkGeojson(userGeoJson , existingGeojson2),
     ])
 
     res.json({ message: forest, message2: protect });
 
 });
 
-function checkGeojson(geojsonAns: any) {
+function checkGeojson(geojsonAns: any , existing: any) {
     try {
-        if (!existingGeojson || !Array.isArray(existingGeojson.features)) {
+        if (!existing || !Array.isArray(existing.features)) {
             return 'GeoJSON data is not loaded';
         }
-        for (const feature of existingGeojson.features) {
+        for (const feature of existing.features) {
             const intersection = turf.booleanOverlap(geojsonAns, feature);
             if (intersection) {
                 return 'The polygons intersect';
@@ -105,23 +106,6 @@ function checkGeojson(geojsonAns: any) {
         }
     } catch (error) {
         console.error('Error checking GeoJSON:', error);
-        return 'Error checking existingGeojson';
-    }
-}
-
-function checkGeojson2(geojsonAns: any) {
-    try {
-        if (!existingGeojson2 || !Array.isArray(existingGeojson2.features)) {
-            return 'GeoJSON data is not loaded';
-        }
-        for (const feature of existingGeojson2.features) {
-            const intersection = turf.booleanOverlap(geojsonAns, feature);
-            if (intersection) {
-                return 'The polygons intersect';
-            }
-        }
-    } catch (error) {
-        console.error('Error checking GeoJSON:', error);
-        return 'Error checking existingGeojson';
+        return 'Error checking existing';
     }
 }
