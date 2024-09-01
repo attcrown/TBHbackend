@@ -4,7 +4,6 @@ import express, { Request, Response } from 'express';
 import * as turf from '@turf/turf';
 import dotenv from 'dotenv';
 import { Client } from 'pg';
-import { promises } from 'dns';
 
 
 const app = express();
