@@ -4,6 +4,7 @@ import express, { Request, Response } from 'express';
 import * as turf from '@turf/turf';
 import dotenv from 'dotenv';
 import { Client } from 'pg';
+import { promises } from 'dns';
 
 
 const app = express();
@@ -57,9 +58,15 @@ connectWithRetry().catch(err => console.error('Final connection error', err.stac
 const forestGeoJsonPath = path.resolve(__dirname, '../geojson/forest.geojson');
 const protectedArea = path.resolve(__dirname, '../geojson/ProtectedArea.geojson');
 
+let arrayForestarea2020 = [];
+for (let i = 1; i <= 519; i++) {
+    arrayForestarea2020.push(path.resolve(__dirname, `../geojson/forestarea2020/forest2020_part_${i}.geojson`));
+}
+
 // Load the geojson file asynchronously
 let existingGeojson: any;
 let existingGeojson2: any;
+let existingGeojsonArray: any;
 
 const loadGeoJson = async () => {
     try {
@@ -68,7 +75,9 @@ const loadGeoJson = async () => {
 
         existingGeojson = JSON.parse(data);
         existingGeojson2 = JSON.parse(data2);
+        existingGeojsonArray = await Promise.all(arrayForestarea2020.map(file => fs.readFile(file, 'utf8')));
 
+        console.log('GeoJSON data loaded successfully');
     } catch (error) {
         console.error('Error reading or parsing the GeoJSON file:', error);
     }
@@ -84,26 +93,46 @@ app.post('/check-intersection', async (req: Request, res: Response) => {
     console.log('req.body',userGeoJson);
 
     // Check if existingGeojson has features and it's an array
-    const [forest ,protect] = await Promise.all([
+    const [forest ,protect ,forest2020] = await Promise.all([
         checkGeojson(userGeoJson , existingGeojson),
         checkGeojson(userGeoJson , existingGeojson2),
+        checkGeojsonArray(userGeoJson, existingGeojsonArray)
     ])
-
-    res.json({ message: forest, message2: protect });
+    console.log('Success');
+    res.json({ message: forest, message2: protect, message3: forest2020 });
 
 });
 
-function checkGeojson(geojsonAns: any , existing: any) {
+async function checkGeojson(geojsonAns: any , existing: any) {
     try {
         if (!existing || !Array.isArray(existing.features)) {
             return 'GeoJSON data is not loaded';
         }
         for (const feature of existing.features) {
-            const intersection = turf.booleanOverlap(geojsonAns, feature);
+            const intersection = await turf.booleanOverlap(geojsonAns, feature);
             if (intersection) {
                 return 'The polygons intersect';
             }
         }
+        return 'The polygons do not intersect';
+    } catch (error) {
+        console.error('Error checking GeoJSON:', error);
+        return 'Error checking existing';
+    }
+}
+
+async function checkGeojsonArray(geojsonAns: any , existing: any) {
+    try {
+        let i = 0;
+        for (const feature of existing) {
+            const ans = await checkGeojson(geojsonAns, feature);
+            if(ans === 'The polygons intersect'){
+                return 'The polygons intersect';
+            }
+            i++
+            console.log(ans ,i);
+        }
+        return 'The polygons do not intersect';
     } catch (error) {
         console.error('Error checking GeoJSON:', error);
         return 'Error checking existing';
