@@ -105,10 +105,10 @@ async function checkGeojson(geojsonAns: any , existing: any) {
 
         // วนลูปผ่าน features ของ existing
         for (const feature of existing.features) {
-            
+
             // ตรวจสอบว่าข้อมูลมี geometry และ coordinates ที่ถูกต้อง
             if (geojsonAns.geometry && feature.geometry) {
-                const intersection = await turf.intersect(geojsonAns, feature);
+                const intersection = await turf.booleanOverlap(geojsonAns, feature);
 
                 // ถ้ามีการทับซ้อน
                 if (intersection) {
