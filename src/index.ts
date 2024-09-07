@@ -1,10 +1,9 @@
 import fs from 'fs/promises';
 import path from 'path';
 import express, { Request, Response } from 'express';
-import * as turf from '@turf/turf';
 import dotenv from 'dotenv';
 import { Client } from 'pg';
-
+import * as turf from '@turf/turf';
 
 const app = express();
 
@@ -15,24 +14,18 @@ dotenv.config({ path: path.resolve(__dirname, '..', envFile) });
 const PORT = process.env.PORT || 8000;
 const DATABASE_URL = process.env.DATABASE_URL || "";
 
-app.get("/", (req: Request, res: Response) => {
-    res.send("Hello, Express with TypeScript!");
-});
-
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+app.use(express.json());
 
 // Function to connect to the database with retry logic
-const connectWithRetry = async () => {
+async function connectWithRetry() {
     const client = new Client({
         connectionString: DATABASE_URL,
     });
-
+    
     const maxRetries = 5; // Max number of retries
     let attempts = 0;
 
-    while (attempts < maxRetries) {
+    for (let i = 0; i < maxRetries; i++) {
         try {
             await client.connect();
             console.log('Connected to the database');
@@ -50,78 +43,71 @@ const connectWithRetry = async () => {
     }
 }
 
-connectWithRetry().catch(err => console.error('Final connection error', err.stack));
+// Convert GeoJSON to WKT format
+function convertGeoJsonToWkt(geoJson: any): string {
+    const { type, coordinates } = geoJson.geometry;
+    let wkt = '';
 
-
-// Path to the forest.geojson file
-const forestGeoJsonPath = path.resolve(__dirname, '../geojson/forest.geojson');
-const protectedArea = path.resolve(__dirname, '../geojson/ProtectedArea.geojson');
-
-// Load the geojson file asynchronously
-let existingGeojson: any;
-let existingGeojson2: any;
-
-const loadGeoJson = async () => {
-    try {
-        const data = await fs.readFile(forestGeoJsonPath, 'utf8');
-        const data2 = await fs.readFile(protectedArea, 'utf8');
-
-        existingGeojson = JSON.parse(data);
-        existingGeojson2 = JSON.parse(data2);
-
-        console.log('GeoJSON data loaded successfully');
-    } catch (error) {
-        console.error('Error reading or parsing the GeoJSON file:', error);
+    switch (type) {
+        case 'Point':
+            wkt = `POINT(${coordinates.join(' ')})`;
+            break;
+        case 'LineString':
+            wkt = `LINESTRING(${coordinates.map(coord => coord.join(' ')).join(', ')})`;
+            break;
+        case 'Polygon':
+            wkt = `POLYGON((${coordinates[0].map(coord => coord.join(' ')).join(', ')}))`;
+            break;
+        // Add more cases if needed
+        default:
+            throw new Error('Unsupported GeoJSON type');
     }
-};
 
-// Load the GeoJSON file when starting the server
-loadGeoJson();
+    return wkt;
+}
 
-app.use(express.json());
-
+// Define the route to check intersection
 app.post('/check-intersection', async (req: Request, res: Response) => {
     const userGeoJson: any = req.body;
-    console.log('req.body',userGeoJson);
+    console.log('req.body', userGeoJson);
 
-    // Check if existingGeojson has features and it's an array
-    const [forest ,protect ] = await Promise.all([
-        checkGeojson(userGeoJson , existingGeojson),
-        checkGeojson(userGeoJson , existingGeojson2)
-    ])
-    console.log('Success');
-    res.json({ message: forest, message2: protect });
+    // Convert userGeoJson to WKT (Well-Known Text) format
+    const userGeoJsonWkt = convertGeoJsonToWkt(userGeoJson);
 
+    try {
+        // Query the database to find intersecting geometries
+        const result = await dbClient.query(`
+            SELECT id, ST_AsGeoJSON(geom) AS geom 
+            FROM geojson_table 
+            WHERE ST_Intersects(
+                geom, 
+                ST_GeomFromText($1, 4326)
+            )
+        `, [userGeoJsonWkt]);
+
+        const intersectingFeatures = result.rows.map(row => JSON.parse(row.geom));
+
+        if (intersectingFeatures.length > 0) {
+            res.json({ message: 'Intersection found', intersectingFeatures });
+        } else {
+            res.json({ message: 'No intersection found' });
+        }
+    } catch (error) {
+        console.error('Error checking intersection:', error);
+        res.status(500).json({ message: 'Error checking intersection' });
+    }
 });
 
-async function checkGeojson(geojsonAns: any , existing: any) {
-    try {
-        if (!existing) {
-            return 'GeoJSON data is not loaded';
-        }
-        if (!Array.isArray(existing.features)) {
-            return 'The polygons do not intersect';
-        }
 
-        // วนลูปผ่าน features ของ existing
-        for (const feature of existing.features) {
+let dbClient: any;
+// Initialize and start the server
+async function startServer() {
+    dbClient = await connectWithRetry();
 
-            // ตรวจสอบว่าข้อมูลมี geometry และ coordinates ที่ถูกต้อง
-            if (geojsonAns.geometry && feature.geometry) {
-                const intersection = await turf.booleanOverlap(geojsonAns, feature);
-
-                // ถ้ามีการทับซ้อน
-                if (intersection) {
-                    return intersection;  // คืนค่าพื้นที่ที่ทับซ้อน
-                }
-            } else {
-                console.warn('Invalid GeoJSON geometry in one of the features.');
-            }
-        }
-
-        return 'The polygons do not intersect';
-    } catch (error) {
-        console.error('Error checking GeoJSON:', error);
-        return 'Error checking existing';
-    }
+    app.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+    });
 }
+
+// Call the async function to start the server
+startServer().catch(err => console.error('Error during initialization:', err));

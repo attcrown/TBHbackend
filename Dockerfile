@@ -1,4 +1,4 @@
-# ใช้ node image ที่มีรุ่นที่เหมาะสม
+# ใช้ node image ที่มีรุ่นที่เหมาะสม (Alpine)
 FROM node:16-alpine
 
 # ตั้งค่าตำแหน่งทำงาน
