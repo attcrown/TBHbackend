@@ -1,9 +1,8 @@
-import fs from 'fs/promises';
 import path from 'path';
 import express, { Request, Response } from 'express';
 import dotenv from 'dotenv';
 import { Client } from 'pg';
-import * as turf from '@turf/turf';
+import { Feature, Geometry } from 'geojson';
 
 const app = express();
 
@@ -44,25 +43,27 @@ async function connectWithRetry() {
 }
 
 // Convert GeoJSON to WKT format
-function convertGeoJsonToWkt(geoJson: any): string {
+function convertGeoJsonToWkt(geoJson: Feature<Geometry>): string {
     const { type, coordinates } = geoJson.geometry;
-    let wkt = '';
 
+    // Define the type for coordinates
+    let wkt = '';
     switch (type) {
         case 'Point':
             wkt = `POINT(${coordinates.join(' ')})`;
             break;
         case 'LineString':
-            wkt = `LINESTRING(${coordinates.map(coord => coord.join(' ')).join(', ')})`;
+            // Type for coordinates in LineString is Array<Array<number>>
+            wkt = `LINESTRING(${(coordinates as [number, number][]).map(coord => coord.join(' ')).join(', ')})`;
             break;
         case 'Polygon':
-            wkt = `POLYGON((${coordinates[0].map(coord => coord.join(' ')).join(', ')}))`;
+            // Type for coordinates in Polygon is Array<Array<Array<number>>>
+            wkt = `POLYGON((${(coordinates[0] as [number, number][]).map(coord => coord.join(' ')).join(', ')}))`;
             break;
         // Add more cases if needed
         default:
             throw new Error('Unsupported GeoJSON type');
     }
-
     return wkt;
 }
 
@@ -78,14 +79,14 @@ app.post('/check-intersection', async (req: Request, res: Response) => {
         // Query the database to find intersecting geometries
         const result = await dbClient.query(`
             SELECT id, ST_AsGeoJSON(geom) AS geom 
-            FROM geojson_table 
+            FROM public.geojson_table
             WHERE ST_Intersects(
                 geom, 
-                ST_GeomFromText($1, 4326)
+                ST_SetSRID(ST_GeomFromText($1), 4326)
             )
         `, [userGeoJsonWkt]);
 
-        const intersectingFeatures = result.rows.map(row => JSON.parse(row.geom));
+        const intersectingFeatures = result.rows.map((row: { geom: string; }) => JSON.parse(row.geom));
 
         if (intersectingFeatures.length > 0) {
             res.json({ message: 'Intersection found', intersectingFeatures });
